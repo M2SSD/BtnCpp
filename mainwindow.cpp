@@ -939,18 +939,55 @@ void MainWindow::on_pushButton_13_clicked() {
         return;
     }
 
-    QString cmd = QString("cmd /c \"cd /d \"%1\" && \"%2\" -o \"%3.exe\" \"%4\"\"")
-                      .arg(path, gccPath, baseName, fileName);
+    ui->statusbar->showMessage("编译中...", 0);
 
-    int result = std::system(cmd.toStdString().c_str());
+    QString errorFile = path + "/error.txt";
+    QString cmd = QString("\"cd /d \"%1\" && \"%2\" -o \"%3.exe\" \"%4\" 2> \"%5\"\"")
+                      .arg(path, gccPath, baseName, fileName, errorFile);
 
-    if (result == 0) {
+    std::system(cmd.toStdString().c_str());
+
+    QFile f(errorFile);
+    QString error;
+    if (f.open(QIODevice::ReadOnly)) {
+        error = f.readAll();
+        f.close();
+        f.remove();
+    }
+
+    if (error.isEmpty()) {
         ui->statusbar->showMessage("编译成功", 3000);
-        QMessageBox::information(this, "编译成功",
-                                 QString("程序编译成功！\n\n可执行文件：%1\\%2.exe").arg(path, baseName));
+        QMessageBox::information(this, "编译", "编译成功");
     } else {
-        QMessageBox::warning(this, "编译失败",
-                             QString("编译失败，返回码：%1").arg(result));
+        ui->statusbar->showMessage("编译失败", 3000);
+
+        QDialog errorDialog(this);
+        errorDialog.setWindowTitle("编译错误");
+        errorDialog.setMinimumSize(700, 500);
+        QVBoxLayout *layout = new QVBoxLayout(&errorDialog);
+        QLabel *label = new QLabel("编译失败，错误&&警告&&提示信息：");
+        layout->addWidget(label);
+        QTextEdit *textEdit = new QTextEdit();
+        textEdit->setReadOnly(true);
+        textEdit->setFont(QFont("Consolas", 10));
+        QStringList lines = error.split('\n');
+        QString html = "<pre style='font-family: Consolas; font-size: 10pt; margin:0;'>";
+
+        foreach (QString line, lines) {
+            if (line.contains("error:", Qt::CaseInsensitive)) html += "<span style='color: red; font-weight: bold;'>" + line.toHtmlEscaped() + "</span><br>";
+            else if (line.contains("warning:", Qt::CaseInsensitive)) html += "<span style='color: #FF8C00; font-weight: bold;'>" + line.toHtmlEscaped() + "</span><br>";
+            else if (line.contains("note:", Qt::CaseInsensitive)) html += "<span style='color: gray;'>" + line.toHtmlEscaped() + "</span><br>";
+            else html += line.toHtmlEscaped() + "<br>";
+
+        }
+        html += "</pre>";
+        textEdit->setHtml(html);
+        layout->addWidget(textEdit);
+        QPushButton *closeBtn = new QPushButton("关闭");
+        connect(closeBtn, &QPushButton::clicked, &errorDialog, &QDialog::accept);
+        layout->addWidget(closeBtn);
+
+        errorDialog.exec();
     }
 }
 
@@ -969,15 +1006,99 @@ void MainWindow::on_pushButton_14_clicked() {
         QMessageBox::warning(this, "运行", "请先编译程序");
         return;
     }
+
     ui->statusbar->showMessage("运行中...", 3000);
     QString cmd = "start \"\" cmd /c \"\"" + exePath + "\" && pause\"";
     std::system(cmd.toStdString().c_str());
+
+    ui->statusbar->showMessage("", 0);
 }
 
 //编译并运行
 void MainWindow::on_pushButton_15_clicked() {
-    on_pushButton_13_clicked();
-    on_pushButton_14_clicked();
+    QString code = ui->plainTextEdit->toPlainText();
+    if (code.isEmpty()) {
+        QMessageBox::warning(this, "编译", "代码区为空");
+        return;
+    }
+
+    if (currentFilePath.isEmpty()) {
+        QMessageBox::warning(this, "编译", "请先保存文件");
+        return;
+    }
+
+    QFileInfo fileInfo(currentFilePath);
+    QString baseName = fileInfo.baseName();
+    QString path = fileInfo.absolutePath();
+    QString fileName = fileInfo.fileName();
+    QString appDir = QCoreApplication::applicationDirPath();
+    QString gccPath = appDir + "/mingw64/bin/g++.exe";
+
+    if (!QFile::exists(gccPath)) {
+        QMessageBox::critical(this, "错误",
+                              QString("找不到编译器：\n%1\n\n请确保mingw64文件夹放在程序同目录下").arg(gccPath));
+        return;
+    }
+
+    ui->statusbar->showMessage("编译中...", 0);
+
+    QString errorFile = path + "/error.txt";
+    QString cmd = QString("\"cd /d \"%1\" && \"%2\" -o \"%3.exe\" \"%4\" 2> \"%5\"\"")
+                      .arg(path, gccPath, baseName, fileName, errorFile);
+
+    std::system(cmd.toStdString().c_str());
+
+    QFile f(errorFile);
+    QString error;
+    if (f.open(QIODevice::ReadOnly)) {
+        error = f.readAll();
+        f.close();
+        f.remove();
+    }
+
+    if (error.isEmpty()) {
+        ui->statusbar->showMessage("编译成功", 3000);
+
+        QString exePath = QString("%1\\%2.exe").arg(path, baseName);
+        if (!QFile::exists(exePath)) {
+            QMessageBox::warning(this, "运行", "可执行文件不存在");
+            return;
+        }
+
+        ui->statusbar->showMessage("运行中...", 3000);
+        QString runCmd = "start \"\" cmd /c \"\"" + exePath + "\" && pause\"";
+        std::system(runCmd.toStdString().c_str());
+
+        ui->statusbar->showMessage("", 0);
+    } else {
+        ui->statusbar->showMessage("编译失败...", 3000);
+
+        QDialog errorDialog(this);
+        errorDialog.setWindowTitle("编译错误");
+        errorDialog.setMinimumSize(700, 500);
+        QVBoxLayout *layout = new QVBoxLayout(&errorDialog);
+        QLabel *label = new QLabel("编译失败，错误&&警告&&提示信息：");
+        layout->addWidget(label);
+        QTextEdit *textEdit = new QTextEdit();
+        textEdit->setReadOnly(true);
+        textEdit->setFont(QFont("Consolas", 10));
+        QStringList lines = error.split('\n');
+        QString html = "<pre style='font-family: Consolas; font-size: 10pt; margin:0;'>";
+
+        foreach (QString line, lines) {
+            if (line.contains("error:", Qt::CaseInsensitive)) html += "<span style='color: red; font-weight: bold;'>" + line.toHtmlEscaped() + "</span><br>";
+            else if (line.contains("warning:", Qt::CaseInsensitive)) html += "<span style='color: #FF8C00; font-weight: bold;'>" + line.toHtmlEscaped() + "</span><br>";
+            else if (line.contains("note:", Qt::CaseInsensitive)) html += "<span style='color: gray;'>" + line.toHtmlEscaped() + "</span><br>";
+            else html += line.toHtmlEscaped() + "<br>";
+        }
+        html += "</pre>";
+        textEdit->setHtml(html);
+        layout->addWidget(textEdit);
+        QPushButton *closeBtn = new QPushButton("关闭");
+        connect(closeBtn, &QPushButton::clicked, &errorDialog, &QDialog::accept);
+        layout->addWidget(closeBtn);
+        errorDialog.exec();
+    }
 }
 
 
